@@ -1,0 +1,5 @@
+name: Popup
+type: module
+description: Popup to display non accepted missions.
+package: _Customer_
+core_version_requirement: ^9.4 || ^10

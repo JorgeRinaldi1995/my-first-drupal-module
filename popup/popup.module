@@ -1,0 +1,161 @@
+<?php
+
+/**
+ * @file
+ * Module of the utilities.
+ */
+
+ use Drupal\node\NodeTypeInterface;
+ use \Drupal\webform\Entity\WebformSubmission;
+ use Drupal\node\Entity\Node;
+ use Drupal\Core\Url;
+
+
+function obter_dados_submissao_webform() {
+    // Carregar a entidade de submissão do Webform.
+
+    $user_id = \Drupal::currentUser()->id();
+    $form_id = 'accepted_mission';
+    
+
+    $submission_storage  = \Drupal::entityTypeManager()->getStorage('webform_submission');
+    $query = \Drupal::database()->select('webform_submission_data', 'd');
+    $query->join('webform_submission', 's', 'd.sid = s.sid');
+    $query->fields('d', ['sid'])
+      ->condition('d.webform_id', 'accepted_mission')
+      ->condition('s.uid', $user_id)
+      /* ->condition('s.entity_id', $mission_id) */
+      ->distinct();
+    $ids = $query->execute()->fetchCol();
+    
+    $submissions = $submission_storage->loadMultiple($ids);
+
+    $user_submissions = array();
+
+    foreach($submissions as $submission){
+        
+        $submission_node = $submission->getSourceEntity();
+
+        if($submission_node){
+            $node_id = $submission_node->id();
+            $node_title = $submission_node->getTitle();
+            $user_submissions[$node_id] = $node_title;
+        }
+        
+    }
+
+    return $user_submissions;
+}
+
+/**
+ * Função para obter os tipos de conteúdo disponíveis.
+ *
+ * @return array
+ *   Um array associativo contendo os tipos de conteúdo, onde as chaves são os
+ *   IDs dos tipos de conteúdo e os valores são os nomes dos tipos de conteúdo.
+ */
+ function contarMissoesUsuarioAtual(&$attachments) {
+
+    $uid = \Drupal::currentUser()->id();
+
+    $query = \Drupal::entityQuery('node')
+    ->condition('type', 'mission')
+    ->accessCheck(TRUE);
+    $nids = $query->execute();
+
+    $missions = array();
+
+    foreach ($nids as $nid) {
+        $node = \Drupal\node\Entity\Node::load($nid);
+        $path = $node->toUrl()->getInternalPath();
+        $alias_manager = \Drupal::service('path_alias.manager');
+        $alias = $alias_manager->getAliasByPath('/' . $path);
+
+        $missions[$nid] = array(
+            'id' => $node->id(),
+            'name' => $node->label(),
+            'path' => $path,
+            'alias' => $alias,
+        );
+        
+    }
+
+    $attachments['#attached']['drupalSettings']['unilever_utils']['missions'] = $missions;
+
+    return $missions;
+
+ }
+
+
+ function verify_non_accepeted_missions(&$attachments){
+
+        $user_id = \Drupal::currentUser()->id();
+
+        $form_id = 'accepted_mission';
+    
+        $missions_available = contarMissoesUsuarioAtual($attachments);
+
+        $submissions_available = obter_dados_submissao_webform();
+
+        $missions_count = sizeof($missions_available);
+
+        $submissions_count = sizeof($submissions_available);
+
+        $x = compact('missions_available', 'submissions_available', 'missions_count', 'submissions_count');
+        
+        $log = '';
+
+        $isAdmin = \Drupal::currentUser()->hasPermission('administer site configuration');
+
+        $isAuth = \Drupal::currentUser()->isAuthenticated();
+
+        if ($isAuth && !$isAdmin && $missions_count > 0) {
+            if($submissions_count == 0){
+                $attachments['#attached']['library'][] = 'unilever_utils/no_missions_accepted';
+                $log = 'usuario não aceitou nenhuma misso';
+            } elseif($missions_count > $submissions_count) {
+                $missions_to_accept = array_diff_key($missions_available, $submissions_available);
+                
+                $x['missions_to_accept'] = $missions_to_accept;
+                
+                $attachments['#attached']['drupalSettings']['unilever_utils']['missionsToAccept'] = $missions_to_accept;
+                
+                $attachments['#attached']['library'][] = 'unilever_utils/missions_left';
+                
+            } else {
+                $log = 'usuario aceitou todas as misses';
+            }
+        }
+
+ }
+
+/**
+* Implements hook_form_alter().
+*/
+
+function unilever_utils_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+
+    if($form_id === 'webform_submission_quiz_add_form' ||
+    $form_id === 'webform_submission_quiz_edit_form'){
+        $form['#attached']['library'][] = 'unilever_utils/quiz_webform';
+    }
+    if (strpos($form_id, 'webform_submission_like_dislike') !== FALSE) {
+        $form['#attached']['library'][] = 'unilever_utils/like_dislike_webform';
+    }
+    if (strpos($form_id, 'webform_submission_accepted_mission') !== FALSE) {
+        $form['#attached']['library'][] = 'unilever_utils/accept_mission_webform';
+    }
+
+}
+
+
+
+function unilever_utils_page_attachments(array &$attachments) {
+    
+    $attachments['#attached']['library'][] = 'unilever_utils/general';
+
+    obter_dados_submissao_webform();
+
+    verify_non_accepeted_missions($attachments);
+
+}

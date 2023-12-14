@@ -1,0 +1,16 @@
+missions_left:
+  version: 1.x
+  js:
+    js/missions_left.js: {}
+  dependencies:
+    - core/drupal
+    - core/jquery
+    - core/once
+no_missions_accepted:
+  version: 1.x
+  js:
+    js/no_missions_accepted.js: {}
+  dependencies:
+    - core/drupal
+    - core/jquery
+    - core/once
